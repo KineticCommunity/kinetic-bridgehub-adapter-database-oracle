@@ -8,6 +8,7 @@ import com.kineticdata.bridgehub.adapter.sql.SqlQualificationParameter;
 import com.kineticdata.bridgehub.adapter.sql.SqlQualificationParser;
 import com.kineticdata.commons.v1.config.ConfigurableProperty;
 import com.kineticdata.commons.v1.config.ConfigurablePropertyMap;
+import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -25,9 +26,23 @@ public class OracleAdapter extends SqlAdapter {
     
     /** Specify the adapter class and ensure it is loaded **/
     public static final String ADAPTER_CLASS = "oracle.jdbc.OracleDriver";
-
+    
     /** Defines the logger */
     private static final org.slf4j.Logger logger = LoggerFactory.getLogger(OracleAdapter.class);
+
+    /** Adapter version constant. */
+    public static String VERSION;
+    /** Load the properties version from the version.properties file. */
+    static {
+        try {
+            java.util.Properties properties = new java.util.Properties();
+            properties.load(OracleAdapter.class.getResourceAsStream("/"+OracleAdapter.class.getName()+".version"));
+            VERSION = properties.getProperty("version");
+        } catch (IOException e) {
+            logger.warn("Unable to load "+OracleAdapter.class.getName()+" version properties.", e);
+            VERSION = "Unknown";
+        }
+    }
 
     /** Defines the collection of property names for the adapter. */
     public static class Properties {
@@ -56,7 +71,7 @@ public class OracleAdapter extends SqlAdapter {
     
     @Override
     public String getVersion() {
-       return  "1.0.0";
+       return VERSION;
     }
     
     @Override
