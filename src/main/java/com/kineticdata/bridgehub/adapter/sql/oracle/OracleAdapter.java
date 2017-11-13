@@ -11,7 +11,13 @@ import com.kineticdata.commons.v1.config.ConfigurablePropertyMap;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.LoggerFactory;
@@ -60,6 +66,8 @@ public class OracleAdapter extends SqlAdapter {
             new ConfigurableProperty(Properties.PORT).setIsRequired(true).setValue("1521"),
             new ConfigurableProperty(Properties.SERVICE_NAME).setIsRequired(true)
     );
+    
+    private final Map<String,List<String>> unsearchableFields = new HashMap<String,List<String>>();
 
     /*---------------------------------------------------------------------------------------------
      * SETUP METHODS
@@ -108,6 +116,20 @@ public class OracleAdapter extends SqlAdapter {
         String columns = request.getFieldString();
         // If the field string was not provided, default it to all columns
         if (StringUtils.isBlank(columns)) {columns = "*";}
+        
+        // Before building up the qualification, check to see if the currently included column
+        // set includes CLOB fields
+        if (!unsearchableFields.containsKey(request.getStructure())) {
+            List<String> unsearchableTableFields = new ArrayList<String>();
+            Statement stmt = connection.createStatement();
+            ResultSet rs = stmt.executeQuery("select * from "+request.getStructure());
+            ResultSetMetaData rsmd = rs.getMetaData();
+            int columnCount = rsmd.getColumnCount();
+            for (int i = 1; i < columnCount+1; i++) {
+                if (!rsmd.isSearchable(i)) unsearchableTableFields.add(rsmd.getColumnName(i));
+            }
+            unsearchableFields.put(request.getStructure(), unsearchableTableFields);
+        }
 
         // Build up the SQL WHERE clause
         SqlQualification qualification = SqlQualificationParser.parse(request.getQuery());
@@ -118,7 +140,20 @@ public class OracleAdapter extends SqlAdapter {
         if (StringUtils.isNotBlank(request.getMetadata("order"))) {
             order = SqlQualificationParser.buildOrderByClause(request.getFields(), request.getMetadata("order"));
         } else if(!"*".equals(columns)) {
-            order = SqlQualificationParser.buildOrderByClause(request.getFields(), columns);
+            // Remove any unsearchale fields from the ordering list before building the
+            // order by clause
+            List<String> searchableFields = new ArrayList<String>();
+            for (String field : request.getFields()) {
+                // Assume that all table fields are coming back as uppercase for now
+                if (!unsearchableFields.get(request.getStructure()).contains(field.toUpperCase())) {
+                    searchableFields.add(field);
+                }
+            }
+            
+            // If searchable fields isn't empty, build the order by clause
+            if (!searchableFields.isEmpty()) {
+                order = SqlQualificationParser.buildOrderByClause(searchableFields, StringUtils.join(searchableFields,","));
+            }
         }
 
         // Build the main statement string
